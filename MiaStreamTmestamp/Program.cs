@@ -22,7 +22,9 @@ if (clientId == "" || clientSecret == "")
 
 using HttpClient twitch = new() { Timeout = TimeSpan.FromSeconds(10) };
 using HttpClient twitchAuth = new() { Timeout = TimeSpan.FromSeconds(10) };
-TwitchAccessTokenProvider tokenProvider = new(twitchAuth, clientId, clientSecret, initialAccessToken);
+
+TwitchAccessTokenProvider tokenProvider =
+    new(twitchAuth, clientId, clientSecret, initialAccessToken);
 
 twitch.DefaultRequestHeaders.Add("Client-ID", clientId);
 
@@ -41,7 +43,8 @@ while (true)
     break;
   }
 
-  StreamCheck check = await CheckStreamAsync(twitch, tokenProvider);
+  StreamCheck check =
+      await CheckStreamAsync(twitch, tokenProvider);
 
   if (check.Status != StreamStatus.Live)
   {
@@ -51,81 +54,127 @@ while (true)
 
   TimeSpan timestamp = check.Timestamp!.Value;
 
-  string timestampText = FormatTimestamp(check.Timestamp!.Value);
+  string timestampText =
+      FormatTimestamp(timestamp);
 
-  string vodLink = check.VodId == "" ? "" : BuildVodLink(check.VodId, timestamp);
+  string vodLink =
+      check.VodId == ""
+          ? ""
+          : BuildVodLink(check.VodId, timestamp);
 
-  string toCopy = vodLink == ""
-      ? $"{timestampText} from today's stream"
-      : $"{vodLink} ({timestampText}) from today's stream";
+  string toCopy =
+      vodLink == ""
+          ? $"{timestampText} from today's stream"
+          : $"{vodLink} ({timestampText}) from today's stream";
 
   grabbedCount++;
 
-  Console.WriteLine(CopyToClipboard(toCopy)
-    ? $"{grabbedCount}) TIMESTAMP GRABBED (Ctrl+V to paste anywhere): {vodLink} <-> {timestampText}"
-    : $"{grabbedCount}) FAILED TO COPY... Desired text: {toCopy}");
+  Console.WriteLine(
+      CopyToClipboard(toCopy)
+          ? $"{grabbedCount}) TIMESTAMP GRABBED (Ctrl+V to paste anywhere): {vodLink} <-> {timestampText}"
+          : $"{grabbedCount}) FAILED TO COPY... Desired text: {toCopy}"
+  );
 
-  Console.WriteLine("Press any key except Q to copy the next timestamp.");
+  if (check.VodId == "")
+  {
+    Console.WriteLine(
+        "No VOD was available. The live timestamp was copied instead."
+    );
+  }
+
+  Console.WriteLine(
+      "Press any key except Q to copy the next timestamp."
+  );
 }
 
 Console.WriteLine("Closed.");
 
-async Task<StreamCheck> CheckStreamAsync(HttpClient client, TwitchAccessTokenProvider tokenProvider)
+async Task<StreamCheck> CheckStreamAsync(
+    HttpClient client,
+    TwitchAccessTokenProvider tokenProvider)
 {
-  string url = $"https://api.twitch.tv/helix/streams?user_login={ChannelName}";
+  string url =
+      $"https://api.twitch.tv/helix/streams?user_login={ChannelName}";
 
   try
   {
-    TokenRefreshResult token = await tokenProvider.ApplyAuthorizationAsync(client);
+    TokenRefreshResult token =
+        await tokenProvider.ApplyAuthorizationAsync(client);
 
     if (!token.Success)
     {
       return StreamCheck.Error(token.Message);
     }
 
-    using HttpResponseMessage response = await client.GetAsync(url);
+    using HttpResponseMessage response =
+        await client.GetAsync(url);
 
     if (!response.IsSuccessStatusCode)
     {
       if (response.StatusCode == HttpStatusCode.Unauthorized)
       {
-        TokenRefreshResult refreshedToken = await tokenProvider.ApplyAuthorizationAsync(client, forceRefresh: true);
+        TokenRefreshResult refreshedToken =
+            await tokenProvider.ApplyAuthorizationAsync(
+                client,
+                forceRefresh: true
+            );
 
         if (!refreshedToken.Success)
         {
-          return StreamCheck.Error(refreshedToken.Message);
+          return StreamCheck.Error(
+              refreshedToken.Message
+          );
         }
 
-        using HttpResponseMessage retryResponse = await client.GetAsync(url);
+        using HttpResponseMessage retryResponse =
+            await client.GetAsync(url);
 
         if (retryResponse.IsSuccessStatusCode)
         {
-          return await ReadStreamCheckAsync(client, retryResponse);
+          return await ReadStreamCheckAsync(
+              client,
+              retryResponse
+          );
         }
 
-        return StreamCheck.Error(GetTwitchErrorMessage(retryResponse));
+        return StreamCheck.Error(
+            GetTwitchErrorMessage(retryResponse)
+        );
       }
 
-      return StreamCheck.Error(GetTwitchErrorMessage(response));
+      return StreamCheck.Error(
+          GetTwitchErrorMessage(response)
+      );
     }
 
-    return await ReadStreamCheckAsync(client, response);
+    return await ReadStreamCheckAsync(
+        client,
+        response
+    );
   }
   catch (HttpRequestException error)
   {
-    return StreamCheck.Error($"Could not reach Twitch. {error.Message}");
+    return StreamCheck.Error(
+        $"Could not reach Twitch. {error.Message}"
+    );
   }
   catch (TaskCanceledException)
   {
-    return StreamCheck.Error("Twitch request timed out.");
+    return StreamCheck.Error(
+        "Twitch request timed out."
+    );
   }
   catch (JsonException)
   {
-    return StreamCheck.Error("Twitch returned malformed JSON.");
+    return StreamCheck.Error(
+        "Twitch returned malformed JSON."
+    );
   }
   catch (Exception error)
   {
-    return StreamCheck.Error($"Unexpected app error: {error.Message}");
+    return StreamCheck.Error(
+        $"Unexpected app error: {error.Message}"
+    );
   }
 }
 
@@ -133,13 +182,20 @@ static async Task<StreamCheck> ReadStreamCheckAsync(
     HttpClient client,
     HttpResponseMessage response)
 {
-  using Stream stream = await response.Content.ReadAsStreamAsync();
-  using JsonDocument json = await JsonDocument.ParseAsync(stream);
+  using Stream stream =
+      await response.Content.ReadAsStreamAsync();
 
-  if (!json.RootElement.TryGetProperty("data", out JsonElement data) ||
+  using JsonDocument json =
+      await JsonDocument.ParseAsync(stream);
+
+  if (!json.RootElement.TryGetProperty(
+          "data",
+          out JsonElement data) ||
       data.ValueKind != JsonValueKind.Array)
   {
-    return StreamCheck.Error("Twitch returned a response this app did not understand.");
+    return StreamCheck.Error(
+        "Twitch returned a response this app did not understand."
+    );
   }
 
   if (data.GetArrayLength() == 0)
@@ -147,75 +203,280 @@ static async Task<StreamCheck> ReadStreamCheckAsync(
     return StreamCheck.Offline();
   }
 
-  if (!data[0].TryGetProperty("started_at", out JsonElement startedAtJson) ||
-      !DateTimeOffset.TryParse(startedAtJson.GetString(), out DateTimeOffset startedAt))
+  JsonElement streamData = data[0];
+
+  if (!streamData.TryGetProperty(
+          "started_at",
+          out JsonElement startedAtJson) ||
+      !DateTimeOffset.TryParse(
+          startedAtJson.GetString(),
+          out DateTimeOffset startedAt))
   {
-    return StreamCheck.Error("Twitch did not include the stream start time.");
+    return StreamCheck.Error(
+        "Twitch did not include the stream start time."
+    );
   }
 
-  if (!data[0].TryGetProperty("user_id", out JsonElement userIdJson))
+  if (!streamData.TryGetProperty(
+          "user_id",
+          out JsonElement userIdJson))
   {
-    return StreamCheck.Error("Twitch did not include the user ID.");
+    return StreamCheck.Error(
+        "Twitch did not include the user ID."
+    );
   }
 
-  string? userId = userIdJson.GetString();
+  string? userId =
+      userIdJson.GetString();
 
   if (string.IsNullOrWhiteSpace(userId))
   {
-    return StreamCheck.Error("Twitch user ID was empty.");
+    return StreamCheck.Error(
+        "Twitch user ID was empty."
+    );
   }
 
-  string vodId = await GetLatestVodIdAsync(client, userId);
+  if (!streamData.TryGetProperty(
+          "id",
+          out JsonElement streamIdJson))
+  {
+    return StreamCheck.Error(
+        "Twitch did not include the stream ID."
+    );
+  }
+
+  string? streamId =
+      streamIdJson.GetString();
+
+  if (string.IsNullOrWhiteSpace(streamId))
+  {
+    return StreamCheck.Error(
+        "Twitch stream ID was empty."
+    );
+  }
+
+  TimeSpan liveElapsed =
+      DateTimeOffset.UtcNow - startedAt;
+
+  VodInfo? vod =
+      await GetCurrentVodAsync(
+          client,
+          userId,
+          streamId
+      );
+
+  /*
+   * The VOD duration is the position within the VOD
+   * that is currently available.
+   *
+   * This matters for streams where the current live
+   * session is associated with a VOD whose timeline is
+   * much longer than the current live elapsed time.
+   *
+   * For a normal stream, VOD duration should be close
+   * to live elapsed anyway.
+   *
+   * If the VOD is unavailable, fall back to the live
+   * broadcast timestamp.
+   */
+  TimeSpan timestamp =
+      vod?.Duration ?? liveElapsed;
 
   return StreamCheck.Live(
-      DateTimeOffset.UtcNow - startedAt,
+      timestamp,
       userId,
-      vodId
+      vod?.Id ?? ""
   );
 }
 
-static async Task<string> GetLatestVodIdAsync(HttpClient client, string userId)
+static async Task<VodInfo?> GetCurrentVodAsync(
+    HttpClient client,
+    string userId,
+    string streamId)
 {
   string url =
-      $"https://api.twitch.tv/helix/videos?user_id={userId}&type=archive&first=1";
+      $"https://api.twitch.tv/helix/videos" +
+      $"?user_id={userId}" +
+      $"&type=archive" +
+      $"&first=100";
 
-  using HttpResponseMessage response = await client.GetAsync(url);
+  using HttpResponseMessage response =
+      await client.GetAsync(url);
 
   if (!response.IsSuccessStatusCode)
   {
-    return "";
+    return null;
   }
 
-  using Stream stream = await response.Content.ReadAsStreamAsync();
-  using JsonDocument json = await JsonDocument.ParseAsync(stream);
+  using Stream stream =
+      await response.Content.ReadAsStreamAsync();
 
-  if (!json.RootElement.TryGetProperty("data", out JsonElement data) ||
-      data.ValueKind != JsonValueKind.Array ||
-      data.GetArrayLength() == 0)
+  using JsonDocument json =
+      await JsonDocument.ParseAsync(stream);
+
+  if (!json.RootElement.TryGetProperty(
+          "data",
+          out JsonElement data) ||
+      data.ValueKind != JsonValueKind.Array)
   {
-    return "";
+    return null;
   }
 
-  if (!data[0].TryGetProperty("id", out JsonElement vodIdJson))
+  foreach (JsonElement video in data.EnumerateArray())
   {
-    return "";
+    if (!video.TryGetProperty(
+            "stream_id",
+            out JsonElement videoStreamIdJson))
+    {
+      continue;
+    }
+
+    string? videoStreamId =
+        videoStreamIdJson.GetString();
+
+    if (videoStreamId != streamId)
+    {
+      continue;
+    }
+
+    if (!video.TryGetProperty(
+            "id",
+            out JsonElement vodIdJson))
+    {
+      continue;
+    }
+
+    if (!video.TryGetProperty(
+            "duration",
+            out JsonElement durationJson))
+    {
+      continue;
+    }
+
+    string? vodId =
+        vodIdJson.GetString();
+
+    string? durationText =
+        durationJson.GetString();
+
+    if (string.IsNullOrWhiteSpace(vodId) ||
+        string.IsNullOrWhiteSpace(durationText))
+    {
+      continue;
+    }
+
+    if (!TryParseTwitchDuration(
+            durationText,
+            out TimeSpan duration))
+    {
+      continue;
+    }
+
+    return new VodInfo(
+        vodId,
+        duration
+    );
   }
 
-  return vodIdJson.GetString() ?? "";
+  return null;
 }
 
-static string GetTwitchErrorMessage(HttpResponseMessage response)
+static bool TryParseTwitchDuration(
+    string value,
+    out TimeSpan duration)
+{
+  duration = TimeSpan.Zero;
+
+  int hours = 0;
+  int minutes = 0;
+  double seconds = 0;
+
+  int index = 0;
+
+  while (index < value.Length)
+  {
+    int numberStart = index;
+
+    while (
+        index < value.Length &&
+        (char.IsDigit(value[index]) ||
+         value[index] == '.'))
+    {
+      index++;
+    }
+
+    if (numberStart == index)
+    {
+      return false;
+    }
+
+    if (!double.TryParse(
+            value[numberStart..index],
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out double number))
+    {
+      return false;
+    }
+
+    if (index >= value.Length)
+    {
+      return false;
+    }
+
+    char unit = value[index];
+
+    switch (unit)
+    {
+      case 'h':
+        hours += (int)number;
+        break;
+
+      case 'm':
+        minutes += (int)number;
+        break;
+
+      case 's':
+        seconds += number;
+        break;
+
+      default:
+        return false;
+    }
+
+    index++;
+  }
+
+  duration =
+      TimeSpan.FromHours(hours) +
+      TimeSpan.FromMinutes(minutes) +
+      TimeSpan.FromSeconds(seconds);
+
+  return true;
+}
+
+static string GetTwitchErrorMessage(
+    HttpResponseMessage response)
 {
   return response.StatusCode switch
   {
-    HttpStatusCode.Unauthorized => "Twitch rejected the access token. The app tried to refresh it; check TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET in .env.",
-    HttpStatusCode.Forbidden => "Twitch rejected the client/token permissions. Check your Twitch app credentials.",
-    HttpStatusCode.TooManyRequests => "Twitch rate limited the app. Wait a bit, then try again.",
+    HttpStatusCode.Unauthorized =>
+        "Twitch rejected the access token. The app tried to refresh it; check TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET in .env.",
+
+    HttpStatusCode.Forbidden =>
+        "Twitch rejected the client/token permissions. Check your Twitch app credentials.",
+
+    HttpStatusCode.TooManyRequests =>
+        "Twitch rate limited the app. Wait a bit, then try again.",
+
     HttpStatusCode.InternalServerError or
     HttpStatusCode.BadGateway or
     HttpStatusCode.ServiceUnavailable or
-    HttpStatusCode.GatewayTimeout => $"Twitch is having server trouble: {(int)response.StatusCode} {response.ReasonPhrase}.",
-    _ => $"Twitch returned {(int)response.StatusCode} {response.ReasonPhrase}."
+    HttpStatusCode.GatewayTimeout =>
+        $"Twitch is having server trouble: {(int)response.StatusCode} {response.ReasonPhrase}.",
+
+    _ =>
+        $"Twitch returned {(int)response.StatusCode} {response.ReasonPhrase}."
   };
 }
 
@@ -233,54 +494,75 @@ static void PrintStatus(StreamCheck check)
     "miavoiceteacher" => "Mia",
     _ => ChannelName
   };
-  Console.WriteLine(check.Status switch
-  {
-    StreamStatus.Live => $"[LIVE] {petName} is live",
-    StreamStatus.Offline => $"[OFFLINE] {petName} is not streaming",
-    _ => "[ERROR] Could not check Twitch"
-  });
+
+  Console.WriteLine(
+      check.Status switch
+      {
+        StreamStatus.Live =>
+            $"[LIVE] {petName} is live",
+
+        StreamStatus.Offline =>
+            $"[OFFLINE] {petName} is not streaming",
+
+        _ =>
+            "[ERROR] Could not check Twitch"
+      }
+  );
 
   Console.ResetColor();
 
   if (check.Status == StreamStatus.Error)
   {
     Console.WriteLine(check.Message);
-    Console.WriteLine("Press Enter to try again. Press Q to exit.");
+    Console.WriteLine(
+        "Press Enter to try again. Press Q to exit."
+    );
     return;
   }
 
-  Console.WriteLine(check.Status == StreamStatus.Live
-      ? "Press any key except Q to copy the stream timestamp. Press Q to exit."
-      : "Press Enter to check again. Press Q to exit.");
+  Console.WriteLine(
+      check.Status == StreamStatus.Live
+          ? "Press any key except Q to copy the stream timestamp. Press Q to exit."
+          : "Press Enter to check again. Press Q to exit."
+  );
 }
 
 static string FormatTimestamp(TimeSpan value)
 {
   int hours = (int)value.TotalHours;
+
   return hours > 0
       ? $"{hours}:{value.Minutes:00}:{value.Seconds:00}"
       : $"{value.Minutes:00}:{value.Seconds:00}";
 }
 
-static string BuildVodLink(string vodId, TimeSpan timestamp)
+static string BuildVodLink(
+    string vodId,
+    TimeSpan timestamp)
 {
   int hours = (int)timestamp.TotalHours;
 
   return
-      $"https://www.twitch.tv/videos/{vodId}?t={hours}h{timestamp.Minutes}m{timestamp.Seconds}s";
+      $"https://www.twitch.tv/videos/{vodId}" +
+      $"?t={hours}h" +
+      $"{timestamp.Minutes}m" +
+      $"{timestamp.Seconds}s";
 }
 
 static bool CopyToClipboard(string text)
 {
   try
   {
-    using Process process = Process.Start(new ProcessStartInfo
-    {
-      FileName = "clip.exe",
-      RedirectStandardInput = true,
-      UseShellExecute = false,
-      CreateNoWindow = true
-    })!;
+    using Process process =
+        Process.Start(
+            new ProcessStartInfo
+            {
+              FileName = "clip.exe",
+              RedirectStandardInput = true,
+              UseShellExecute = false,
+              CreateNoWindow = true
+            }
+        )!;
 
     process.StandardInput.Write(text);
     process.StandardInput.Close();
@@ -294,35 +576,38 @@ static bool CopyToClipboard(string text)
   }
 }
 
-static void LoadEnv()
-{
-  string envPath = Path.Combine(AppContext.BaseDirectory, ".env");
+// static void LoadEnv()
+// {
+//   string envPath = Path.Combine(
+//       AppContext.BaseDirectory,
+//       ".env"
+//   );
 
-  if (!File.Exists(envPath))
-  {
-    return;
-  }
+//   if (!File.Exists(envPath))
+//   {
+//     return;
+//   }
 
-  foreach (string line in File.ReadAllLines(envPath))
-  {
-    string trimmed = line.Trim();
+//   foreach (string line in File.ReadAllLines(envPath))
+//   {
+//     string trimmed = line.Trim();
 
-    if (trimmed == "" || trimmed.StartsWith('#'))
-    {
-      continue;
-    }
+//     if (trimmed == "" || trimmed.StartsWith('#'))
+//     {
+//       continue;
+//     }
 
-    string[] parts = trimmed.Split('=', 2);
+//     string[] parts = trimmed.Split('=', 2);
 
-    if (parts.Length == 2)
-    {
-      Environment.SetEnvironmentVariable(
-          parts[0].Trim(),
-          parts[1].Trim().Trim('"')
-      );
-    }
-  }
-}
+//     if (parts.Length == 2)
+//     {
+//       Environment.SetEnvironmentVariable(
+//           parts[0].Trim(),
+//           parts[1].Trim().Trim('"')
+//       );
+//     }
+//   }
+// }
 
 enum StreamStatus
 {
@@ -336,29 +621,56 @@ sealed record StreamCheck(
     TimeSpan? Timestamp = null,
     string Message = "",
     string UserId = "",
-    string VodId = ""
-)
+    string VodId = "")
 {
-  public static StreamCheck Live(TimeSpan timestamp, string userId, string vodId)
-      => new(StreamStatus.Live, timestamp, "", userId, vodId);
+  public static StreamCheck Live(
+      TimeSpan timestamp,
+      string userId,
+      string vodId)
+      => new(
+          StreamStatus.Live,
+          timestamp,
+          "",
+          userId,
+          vodId
+      );
 
   public static StreamCheck Offline()
       => new(StreamStatus.Offline);
 
-  public static StreamCheck Error(string message)
-      => new(StreamStatus.Error, null, message);
+  public static StreamCheck Error(
+      string message)
+      => new(
+          StreamStatus.Error,
+          null,
+          message
+      );
 }
+
+sealed record VodInfo(
+    string Id,
+    TimeSpan Duration
+);
 
 sealed class TwitchAccessTokenProvider
 {
-  private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(5);
+  private static readonly TimeSpan RefreshWindow =
+      TimeSpan.FromMinutes(5);
+
   private readonly HttpClient client;
   private readonly string clientId;
   private readonly string clientSecret;
-  private string accessToken;
-  private DateTimeOffset expiresAt = DateTimeOffset.MinValue;
 
-  public TwitchAccessTokenProvider(HttpClient client, string clientId, string clientSecret, string accessToken)
+  private string accessToken;
+
+  private DateTimeOffset expiresAt =
+      DateTimeOffset.MinValue;
+
+  public TwitchAccessTokenProvider(
+      HttpClient client,
+      string clientId,
+      string clientSecret,
+      string accessToken)
   {
     this.client = client;
     this.clientId = clientId;
@@ -366,23 +678,35 @@ sealed class TwitchAccessTokenProvider
     this.accessToken = accessToken;
   }
 
-  public async Task<TokenRefreshResult> ApplyAuthorizationAsync(HttpClient twitch, bool forceRefresh = false)
+  public async Task<TokenRefreshResult>
+      ApplyAuthorizationAsync(
+          HttpClient twitch,
+          bool forceRefresh = false)
   {
-    TokenRefreshResult result = await EnsureValidTokenAsync(forceRefresh);
+    TokenRefreshResult result =
+        await EnsureValidTokenAsync(forceRefresh);
 
     if (result.Success)
     {
-      twitch.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+      twitch.DefaultRequestHeaders.Authorization =
+          new AuthenticationHeaderValue(
+              "Bearer",
+              accessToken
+          );
     }
 
     return result;
   }
 
-  private async Task<TokenRefreshResult> EnsureValidTokenAsync(bool forceRefresh)
+  private async Task<TokenRefreshResult>
+      EnsureValidTokenAsync(
+          bool forceRefresh)
   {
     if (!forceRefresh &&
         accessToken != "" &&
-        expiresAt > DateTimeOffset.UtcNow.Add(RefreshWindow))
+        expiresAt >
+            DateTimeOffset.UtcNow.Add(
+                RefreshWindow))
     {
       return TokenRefreshResult.Ok();
     }
@@ -390,66 +714,114 @@ sealed class TwitchAccessTokenProvider
     return await RefreshTokenAsync();
   }
 
-  private async Task<TokenRefreshResult> RefreshTokenAsync()
+  private async Task<TokenRefreshResult>
+      RefreshTokenAsync()
   {
-    using FormUrlEncodedContent content = new(new Dictionary<string, string>
-    {
-      ["client_id"] = clientId,
-      ["client_secret"] = clientSecret,
-      ["grant_type"] = "client_credentials"
-    });
+    using FormUrlEncodedContent content =
+        new(
+            new Dictionary<string, string>
+            {
+              ["client_id"] = clientId,
+              ["client_secret"] = clientSecret,
+              ["grant_type"] = "client_credentials"
+            }
+        );
 
     try
     {
-      using HttpResponseMessage response = await client.PostAsync("https://id.twitch.tv/oauth2/token", content);
-      using Stream stream = await response.Content.ReadAsStreamAsync();
-      using JsonDocument json = await JsonDocument.ParseAsync(stream);
+      using HttpResponseMessage response =
+          await client.PostAsync(
+              "https://id.twitch.tv/oauth2/token",
+              content
+          );
+
+      using Stream stream =
+          await response.Content.ReadAsStreamAsync();
+
+      using JsonDocument json =
+          await JsonDocument.ParseAsync(stream);
 
       if (!response.IsSuccessStatusCode)
       {
-        string message = json.RootElement.TryGetProperty("message", out JsonElement errorMessage)
-            ? errorMessage.GetString() ?? response.ReasonPhrase ?? "Unknown error"
-            : response.ReasonPhrase ?? "Unknown error";
+        string message =
+            json.RootElement.TryGetProperty(
+                "message",
+                out JsonElement errorMessage)
+                ? errorMessage.GetString() ??
+                  response.ReasonPhrase ??
+                  "Unknown error"
+                : response.ReasonPhrase ??
+                  "Unknown error";
 
-        return TokenRefreshResult.Error($"Could not refresh Twitch access token: {(int)response.StatusCode} {message}");
+        return TokenRefreshResult.Error(
+            $"Could not refresh Twitch access token: " +
+            $"{(int)response.StatusCode} {message}"
+        );
       }
 
-      if (!json.RootElement.TryGetProperty("access_token", out JsonElement tokenJson) ||
-          !json.RootElement.TryGetProperty("expires_in", out JsonElement expiresInJson))
+      if (!json.RootElement.TryGetProperty(
+              "access_token",
+              out JsonElement tokenJson) ||
+          !json.RootElement.TryGetProperty(
+              "expires_in",
+              out JsonElement expiresInJson))
       {
-        return TokenRefreshResult.Error("Twitch token refresh response did not include an access token or expiry.");
+        return TokenRefreshResult.Error(
+            "Twitch token refresh response did not include an access token or expiry."
+        );
       }
 
-      string? newAccessToken = tokenJson.GetString();
+      string? newAccessToken =
+          tokenJson.GetString();
 
-      if (string.IsNullOrWhiteSpace(newAccessToken) || !expiresInJson.TryGetInt32(out int expiresInSeconds))
+      if (string.IsNullOrWhiteSpace(
+              newAccessToken) ||
+          !expiresInJson.TryGetInt32(
+              out int expiresInSeconds))
       {
-        return TokenRefreshResult.Error("Twitch token refresh response was malformed.");
+        return TokenRefreshResult.Error(
+            "Twitch token refresh response was malformed."
+        );
       }
 
       accessToken = newAccessToken;
-      expiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
+
+      expiresAt =
+          DateTimeOffset.UtcNow.AddSeconds(
+              expiresInSeconds
+          );
 
       return TokenRefreshResult.Ok();
     }
     catch (HttpRequestException error)
     {
-      return TokenRefreshResult.Error($"Could not reach Twitch auth. {error.Message}");
+      return TokenRefreshResult.Error(
+          $"Could not reach Twitch auth. {error.Message}"
+      );
     }
     catch (TaskCanceledException)
     {
-      return TokenRefreshResult.Error("Twitch auth request timed out.");
+      return TokenRefreshResult.Error(
+          "Twitch auth request timed out."
+      );
     }
     catch (JsonException)
     {
-      return TokenRefreshResult.Error("Twitch auth returned malformed JSON.");
+      return TokenRefreshResult.Error(
+          "Twitch auth returned malformed JSON."
+      );
     }
   }
 }
 
-sealed record TokenRefreshResult(bool Success, string Message = "")
+sealed record TokenRefreshResult(
+    bool Success,
+    string Message = "")
 {
-  public static TokenRefreshResult Ok() => new(true);
-  public static TokenRefreshResult Error(string message) => new(false, message);
-}
+  public static TokenRefreshResult Ok()
+      => new(true);
 
+  public static TokenRefreshResult Error(
+      string message)
+      => new(false, message);
+}
